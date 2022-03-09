@@ -6,9 +6,10 @@ import { ParameterChangeProposal } from '../generated/params/params'
 import { Group, toUint8Array } from './groups-store'
 import { CosmosNodeService } from '../protocol/cosmos-node-service'
 import { GroupProposalsUrls } from '../protocol/proposals-service'
-import { coins } from '@cosmjs/proto-signing'
+import { Coin, coins } from '@cosmjs/proto-signing'
 import { BroadcastTxResponse } from '@cosmjs/stargate'
 import { Choice } from '../generated/regen/group/v1alpha1/types'
+import { MsgSubmitProposal } from '../generated/gov/tx'
 
 interface NewProposal {
     // address: string
@@ -32,19 +33,25 @@ export class ProposalsStore {
     }
 
     createProposal = async (group: Group): Promise<BroadcastTxResponse| null> => {
-        const mockMsgs = [this.encodeTextProposal({
+        // TODO remove mocks
+        const mockMetaData = "testing abc"
+        const mockCoins: Coin[] = coins(5, CosmosNodeService.instance.chainInfo.stakeCurrency.coinMinimalDenom)
+        const mockTextProposal = this.encodeTextProposal({
             title: "Testing",
             description: "Test desc"
-        })]
-        const mockMetaData = "testing abc"
+        });
 
         const key = await CosmosNodeService.instance.cosmosClient.keplr.getKey(CosmosNodeService.instance.chainInfo.chainId)
         const me = key.bech32Address
 
+        // TODO remove these mocks too
+        const mockMsgSubmitProposal = this.createMsgSubmitProposal(mockTextProposal, me, mockCoins)
+        const mockMsgs = [mockMsgSubmitProposal]
+
         // TODO replace hardcode
         const exec = Exec.EXEC_TRY
 
-        const msg: MsgCreateProposal = {
+        const msg: MsgCreateProposal = MsgCreateProposal.fromPartial({
             // TODO replace with fetching group policy address
             // this is group policy address hardcoded for testing
             address: "regen1m73npu5jn89syq23568a44ymrj7za9qa7mxgh0",
@@ -52,13 +59,13 @@ export class ProposalsStore {
             msgs: mockMsgs,
             exec,
             metadata: toUint8Array(mockMetaData)
-        }
+        }) 
 
         console.log("msg", msg)
 
         const msgAny = {
             typeUrl: GroupProposalsUrls.MsgCreateProposal,
-            value: MsgCreateProposal.encode(msg).finish()
+            value: msg
         }
 
         const fee = {
@@ -144,6 +151,14 @@ export class ProposalsStore {
         } catch (error) {
             console.log("error exec proposal", error)
         }
+    }
+
+    createMsgSubmitProposal = (anyProposal: Any, proposer: string, deposit: Coin[]): Any => {
+        const msg = { 
+            type_url: "/cosmos.gov.v1beta1.MsgSubmitProposal",
+            value:MsgSubmitProposal.encode({ content: anyProposal, proposer, initialDeposit: deposit }).finish()
+        } 
+        return msg
     }
 
     // for usage in components, encode before adding to proposal state
